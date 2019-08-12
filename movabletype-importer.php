@@ -275,13 +275,14 @@ class MT_Import extends WP_Importer {
 				wp_create_categories($post->categories, $post_id);
 			}
 
-//          // Add tags or keywords
+//          // Add keywords
 //			if ( 1 < strlen($post->post_keywords) ) {
 //			 	// Keywords exist.
 //				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
 //				wp_add_post_tags($post_id, $post->post_keywords);
 //			}
 
+			// Add tags.
 			if ( 1 < strlen( $post->post_tags ) ) {
 				// Tags exist.
 				printf( '<br />' . __( 'Adding tags <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_tags ) );
