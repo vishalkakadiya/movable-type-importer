@@ -250,7 +250,7 @@ class MT_Import extends WP_Importer {
 		$this->mt_authors_form();
 	}
 
-	function save_post(&$post, &$comments, &$pings) {
+	function save_post(&$post, &$comments, &$pings, &$meta_fields) {
 		$post = get_object_vars($post);
 		$post = add_magic_quotes($post);
 		$post = (object) $post;
@@ -275,14 +275,13 @@ class MT_Import extends WP_Importer {
 				wp_create_categories($post->categories, $post_id);
 			}
 
-//          // Add keywords
+//          // Add tags or keywords
 //			if ( 1 < strlen($post->post_keywords) ) {
 //			 	// Keywords exist.
 //				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
 //				wp_add_post_tags($post_id, $post->post_keywords);
 //			}
 
-			// Add tags.
 			if ( 1 < strlen( $post->post_tags ) ) {
 				// Tags exist.
 				printf( '<br />' . __( 'Adding tags <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_tags ) );
@@ -323,6 +322,13 @@ class MT_Import extends WP_Importer {
 		if ( $num_pings )
 			printf(' '._n('(%s ping)', '(%s pings)', $num_pings, 'movabletype-importer'), $num_pings);
 
+		// Add meta fields.
+		if ( ! empty( $meta_fields ) ) {
+			foreach ( $meta_fields as $key => $meta_field ) {
+				update_post_meta( $post_id, $key, $meta_field );
+			}
+		}
+
 		echo "</li>";
 		//ob_flush();flush();
 	}
@@ -340,6 +346,7 @@ class MT_Import extends WP_Importer {
 		$comments = array();
 		$ping = new StdClass();
 		$pings = array();
+		$meta_fields = array();
 
 		echo "<div class='wrap'><ol>";
 
@@ -359,7 +366,7 @@ class MT_Import extends WP_Importer {
 			} else if ( '--------' == $line ) {
 				// Finishing a post.
 				$context = '';
-				$result = $this->save_post($post, $comments, $pings);
+				$result = $this->save_post($post, $comments, $pings, $meta_fields);
 				if ( is_wp_error( $result ) )
 					return $result;
 				$post = new StdClass;
@@ -367,6 +374,7 @@ class MT_Import extends WP_Importer {
 				$ping = new StdClass();
 				$comments = array();
 				$pings = array();
+				$meta_fields = array();
 			} else if ( 'BODY:' == $line ) {
 				$context = 'body';
 			} else if ( 'EXTENDED BODY:' == $line ) {
@@ -392,11 +400,29 @@ class MT_Import extends WP_Importer {
 				else if ( 'ping' == $context )
 					$ping->title = $title;
 			} else if ( 0 === strpos($line, 'TYPE:') ) {
-				if ( '' == $context )
+
+				if ( '' == $context ) {
 					$post->post_type = trim( substr( $line, strlen( 'TYPE:' ) ) );
+				}
+
 			} else if ( 0 === strpos($line, 'TAGS:') ) {
-				if ( '' == $context )
+
+				if ( '' == $context ) {
 					$post->post_tags = trim( substr( $line, strlen( 'TAGS:' ) ) );
+				}
+
+			} else if ( 0 === strpos( $line, 'META FIELD:' ) ) {
+
+				if ( '' == $context ) {
+
+					$meta_line = trim( substr( $line, strlen( 'META FIELD:' ) ) );
+					$meta_parts = explode( ':::', $meta_line );
+
+					if ( ! empty( $meta_parts[0] ) && ! empty( $meta_parts[1] ) && 'revision' !== $meta_parts[0] ) {
+						$meta_fields[ $meta_parts[0] ] = $meta_parts[1];
+					}
+				}
+
 			} else if ( 0 === strpos($line, 'BASENAME:') ) {
 				$slug = trim( substr($line, strlen('BASENAME:')) );
 				if ( !empty( $slug ) )
