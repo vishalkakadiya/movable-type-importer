@@ -275,11 +275,17 @@ class MT_Import extends WP_Importer {
 				wp_create_categories($post->categories, $post_id);
 			}
 
-			 // Add tags or keywords
-			if ( 1 < strlen($post->post_keywords) ) {
-			 	// Keywords exist.
-				printf('<br />'.__('Adding tags <em>%s</em>...', 'movabletype-importer'), stripslashes($post->post_keywords));
-				wp_add_post_tags($post_id, $post->post_keywords);
+//          // Add tags or keywords
+//			if ( 1 < strlen($post->post_keywords) ) {
+//			 	// Keywords exist.
+//				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
+//				wp_add_post_tags($post_id, $post->post_keywords);
+//			}
+
+			if ( 1 < strlen( $post->post_tags ) ) {
+				// Tags exist.
+				printf( '<br />' . __( 'Adding tags <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_tags ) );
+				wp_add_post_tags( $post_id, $post->post_tags );
 			}
 		}
 
@@ -384,6 +390,12 @@ class MT_Import extends WP_Importer {
 					$post->post_title = $title;
 				else if ( 'ping' == $context )
 					$ping->title = $title;
+			} else if ( 0 === strpos($line, 'TYPE:') ) {
+				if ( '' == $context )
+					$post->post_type = trim( substr( $line, strlen( 'TYPE:' ) ) );
+			} else if ( 0 === strpos($line, 'TAGS:') ) {
+				if ( '' == $context )
+					$post->post_tags = trim( substr( $line, strlen( 'TAGS:' ) ) );
 			} else if ( 0 === strpos($line, 'BASENAME:') ) {
 				$slug = trim( substr($line, strlen('BASENAME:')) );
 				if ( !empty( $slug ) )
@@ -408,11 +420,11 @@ class MT_Import extends WP_Importer {
 			} else if ( 0 === strpos($line, 'CATEGORY:') ) {
 				$category = trim( substr($line, strlen('CATEGORY:')) );
 				if ( '' != $category )
-					$post->categories[] = $category;
+					$post->categories[] = explode( ',', $category );
 			} else if ( 0 === strpos($line, 'PRIMARY CATEGORY:') ) {
 				$category = trim( substr($line, strlen('PRIMARY CATEGORY:')) );
 				if ( '' != $category )
-					$post->categories[] = $category;
+					$post->categories[] = explode( ',', $category );;
 			} else if ( 0 === strpos($line, 'DATE:') ) {
 				$date = trim( substr($line, strlen('DATE:')) );
 				$date = strtotime($date);
@@ -487,8 +499,10 @@ class MT_Import extends WP_Importer {
 			$this->file = WP_CONTENT_DIR . '/mt-export.txt';
 		else
 			$this->file = get_attached_file($this->id);
+
 		$this->get_authors_from_post();
 		$result = $this->process_posts();
+
 		if ( is_wp_error( $result ) )
 			return $result;
 	}
