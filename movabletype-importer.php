@@ -250,7 +250,7 @@ class MT_Import extends WP_Importer {
 		$this->mt_authors_form();
 	}
 
-	function save_post(&$post, &$comments, &$pings, &$meta_fields) {
+	function save_post(&$post, &$comments, &$pings) {
 		$post = get_object_vars($post);
 		$post = add_magic_quotes($post);
 		$post = (object) $post;
@@ -271,16 +271,48 @@ class MT_Import extends WP_Importer {
 				return $post_id;
 
 			// Add categories.
-			if ( 0 != count($post->categories) ) {
-				wp_create_categories($post->categories, $post_id);
+			if ( 0 != count( $post->categories ) ) {
+				wp_create_categories( $post->categories, $post_id );
 			}
 
-//          // Add tags or keywords
-//			if ( 1 < strlen($post->post_keywords) ) {
-//			 	// Keywords exist.
-//				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
-//				wp_add_post_tags($post_id, $post->post_keywords);
-//			}
+			// Insert categories which is having slug.
+			if ( 0 !== count( $post->specific_categories ) ) {
+
+				$category_ids = [];
+
+				foreach ( $post->specific_categories as $category_slug => $category_name ) {
+
+					$category_id = category_exists( $category_slug );
+
+					if ( ! $category_id ) {
+
+						$category_id = wp_insert_category(
+							[
+								'category_nicename' => $category_slug,
+								'cat_name'          => $category_name,
+							]
+						);
+					}
+
+					if ( $category_id ) {
+						$category_ids[] = $category_id;
+					}
+				}
+
+				// Attach categories to post.
+				if ( ! empty( $category_ids ) ) {
+					wp_set_post_categories( $post_id, $category_ids, true );
+				}
+			}
+
+			// Add tags or keywords
+			/*
+			if ( 1 < strlen($post->post_keywords) ) {
+			 	// Keywords exist.
+				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
+				wp_add_post_tags($post_id, $post->post_keywords);
+			}
+			*/
 
 			if ( 1 < strlen( $post->post_tags ) ) {
 				// Tags exist.
@@ -323,8 +355,8 @@ class MT_Import extends WP_Importer {
 			printf(' '._n('(%s ping)', '(%s pings)', $num_pings, 'movabletype-importer'), $num_pings);
 
 		// Add meta fields.
-		if ( ! empty( $meta_fields ) ) {
-			foreach ( $meta_fields as $key => $meta_field ) {
+		if ( ! empty( $post->meta_fields ) ) {
+			foreach ( $post->meta_fields as $key => $meta_field ) {
 				update_post_meta( $post_id, $key, $meta_field );
 			}
 		}
@@ -346,7 +378,6 @@ class MT_Import extends WP_Importer {
 		$comments = array();
 		$ping = new StdClass();
 		$pings = array();
-		$meta_fields = array();
 
 		echo "<div class='wrap'><ol>";
 
@@ -366,7 +397,7 @@ class MT_Import extends WP_Importer {
 			} else if ( '--------' == $line ) {
 				// Finishing a post.
 				$context = '';
-				$result = $this->save_post($post, $comments, $pings, $meta_fields);
+				$result = $this->save_post($post, $comments, $pings);
 				if ( is_wp_error( $result ) )
 					return $result;
 				$post = new StdClass;
@@ -374,7 +405,6 @@ class MT_Import extends WP_Importer {
 				$ping = new StdClass();
 				$comments = array();
 				$pings = array();
-				$meta_fields = array();
 			} else if ( 'BODY:' == $line ) {
 				$context = 'body';
 			} else if ( 'EXTENDED BODY:' == $line ) {
@@ -419,7 +449,7 @@ class MT_Import extends WP_Importer {
 					$meta_parts = explode( ':::', $meta_line );
 
 					if ( ! empty( $meta_parts[0] ) && ! empty( $meta_parts[1] ) && 'revision' !== $meta_parts[0] ) {
-						$meta_fields[ $meta_parts[0] ] = $meta_parts[1];
+						$post->meta_fields[ $meta_parts[0] ] = $meta_parts[1];
 					}
 				}
 
@@ -444,10 +474,30 @@ class MT_Import extends WP_Importer {
 					$post->ping_status = 'open';
 				else
 					$post->ping_status = 'closed';
+
+
+			} else if ( 0 === strpos( $line, 'CATEGORIES:' ) ) {
+				$categories = trim( substr( $line, strlen( 'CATEGORIES:' ) ) );
+
+				if ( '' !== $categories ) {
+					$list_categories = explode( ',', $categories );
+
+					foreach ( $list_categories as $list_category ) {
+
+						$category_detail = explode( ':::', $list_category );
+
+						if ( ! empty( $category_detail[0] ) && ! empty( $category_detail[1] ) ) {
+							$post->specific_categories[ $category_detail[0] ] = $category_detail[1];
+						}
+					}
+				}
+
 			} else if ( 0 === strpos($line, 'CATEGORY:') ) {
 				$category = trim( substr($line, strlen('CATEGORY:')) );
+
 				if ( '' != $category )
 					$post->categories[] = explode( ',', $category );
+
 			} else if ( 0 === strpos($line, 'PRIMARY CATEGORY:') ) {
 				$category = trim( substr($line, strlen('PRIMARY CATEGORY:')) );
 				if ( '' != $category )
