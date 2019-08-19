@@ -270,16 +270,98 @@ class MT_Import extends WP_Importer {
 			if ( is_wp_error( $post_id ) )
 				return $post_id;
 
-			// Add categories.
-			if ( 0 != count($post->categories) ) {
-				wp_create_categories($post->categories, $post_id);
+
+			if ( isset( $post->image ) && ! empty( $post->image ) ) {
+
+				$image_src = $post->image;
+
+				$file_array['tmp_name'] = download_url( $image_src );
+
+				$file_array['name'] = basename( $image_src );
+				$attachment_id      = media_handle_sideload( $file_array, $post_id );
+
+				if ( is_wp_error( $attachment_id ) ) {
+
+					printf( '<br />' . __( 'Image import failed for source: <em>%s</em>', 'movabletype-importer' ), esc_html( $post->image ) );
+
+				} else {
+
+					$success = set_post_thumbnail( $post_id, $attachment_id );
+
+					if ( ! $success ) {
+
+						printf( '<br />' . __( 'Post thumbnail(attachment id: <em>%d</em>) not set for post : <em>%d</em>', 'movabletype-importer' ), esc_html( $attachment_id ), esc_html( $post_id ) );
+
+					} else {
+
+						printf( '<br />' . __( 'Image uploaded for post: <em>%d</em>', 'movabletype-importer' ), esc_html( $post_id ) );
+					}
+				}
+
+
 			}
 
-			 // Add tags or keywords
+			// Add categories.
+			if ( 0 != count( $post->categories ) ) {
+				wp_create_categories( $post->categories, $post_id );
+			}
+
+			// Insert categories which is having slug.
+			if ( 0 !== count( $post->specific_categories ) ) {
+
+				$category_ids = [];
+
+				$taxonomy = 'category';
+				if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type ) ) {
+					$taxonomy = $post->post_type;
+				}
+
+				foreach ( $post->specific_categories as $category_slug => $category ) {
+
+					$category_id = term_exists( $category_slug, $taxonomy );
+
+					if ( ! $category_id ) {
+
+						if ( ! empty( $category['category_parent'] ) ) {
+
+							$parent_category = get_term_by( 'slug', $category['category_parent'], $taxonomy );
+
+							if ( $parent_category ) {
+								$category['category_parent'] = $parent_category->term_id;
+							} else {
+								unset( $category['category_parent'] );
+							}
+						}
+
+						$category['taxonomy'] = $taxonomy;
+
+						$category_id = wp_insert_category( $category );
+					}
+
+					if ( $category_id ) {
+						$category_ids[] = $category_id;
+					}
+				}
+
+				// Attach categories to post.
+				if ( ! empty( $category_ids ) ) {
+					wp_set_post_terms( $post_id, $category_ids, $taxonomy, true );
+				}
+			}
+
+			// Add tags or keywords
+			/*
 			if ( 1 < strlen($post->post_keywords) ) {
 			 	// Keywords exist.
-				printf('<br />'.__('Adding tags <em>%s</em>...', 'movabletype-importer'), stripslashes($post->post_keywords));
+				printf( '<br />' . __( 'Adding keywords <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_keywords ) );
 				wp_add_post_tags($post_id, $post->post_keywords);
+			}
+			*/
+
+			if ( 1 < strlen( $post->post_tags ) ) {
+				// Tags exist.
+				printf( '<br />' . __( 'Adding tags <em>%s</em>...', 'movabletype-importer' ), stripslashes( $post->post_tags ) );
+				wp_add_post_tags( $post_id, $post->post_tags );
 			}
 		}
 
@@ -315,6 +397,13 @@ class MT_Import extends WP_Importer {
 
 		if ( $num_pings )
 			printf(' '._n('(%s ping)', '(%s pings)', $num_pings, 'movabletype-importer'), $num_pings);
+
+		// Add meta fields.
+		if ( ! empty( $post->meta_fields ) ) {
+			foreach ( $post->meta_fields as $key => $meta_field ) {
+				update_post_meta( $post_id, $key, $meta_field );
+			}
+		}
 
 		echo "</li>";
 		//ob_flush();flush();
@@ -384,6 +473,35 @@ class MT_Import extends WP_Importer {
 					$post->post_title = $title;
 				else if ( 'ping' == $context )
 					$ping->title = $title;
+			} else if ( 0 === strpos($line, 'TYPE:') ) {
+
+				if ( '' == $context ) {
+					$post->post_type = trim( substr( $line, strlen( 'TYPE:' ) ) );
+				}
+
+			} else if ( 0 === strpos($line, 'TAGS:') ) {
+
+				if ( '' == $context ) {
+					$post->post_tags = trim( substr( $line, strlen( 'TAGS:' ) ) );
+				}
+
+			} else if ( 0 === strpos( $line, 'META FIELD:' ) ) {
+
+				if ( '' == $context ) {
+
+					$meta_line = trim( substr( $line, strlen( 'META FIELD:' ) ) );
+					$meta_parts = explode( ':::', $meta_line );
+
+					if ( ! empty( $meta_parts[0] ) && ! empty( $meta_parts[1] ) && 'revision' !== $meta_parts[0] ) {
+						$post->meta_fields[ $meta_parts[0] ] = $meta_parts[1];
+					}
+				}
+
+			} else if ( 0 === strpos($line, 'IMAGE:') ) {
+				$image = trim( substr($line, strlen('IMAGE:')) );
+				if ( ! empty( $image ) ) {
+					$post->image = $image;
+				}
 			} else if ( 0 === strpos($line, 'BASENAME:') ) {
 				$slug = trim( substr($line, strlen('BASENAME:')) );
 				if ( !empty( $slug ) )
@@ -405,14 +523,45 @@ class MT_Import extends WP_Importer {
 					$post->ping_status = 'open';
 				else
 					$post->ping_status = 'closed';
+
+
+			} else if ( 0 === strpos( $line, 'CATEGORIES:' ) ) {
+				$categories = trim( substr( $line, strlen( 'CATEGORIES:' ) ) );
+
+				if ( '' !== $categories ) {
+
+					$list_categories = explode( ',', $categories );
+
+					foreach ( $list_categories as $list_category ) {
+
+						$category_detail = explode( ':::', $list_category );
+
+						if ( ! empty( $category_detail[0] ) && ! empty( $category_detail[1] ) ) {
+
+							$category = [
+								'category_nicename' => $category_detail[0],
+								'cat_name'          => $category_detail[1],
+							];
+
+							if ( ! empty( $category_detail[2] ) ) {
+								$category['category_parent'] = $category_detail[2];
+							}
+
+							$post->specific_categories[ $category_detail[0] ] = $category;
+						}
+					}
+				}
+
 			} else if ( 0 === strpos($line, 'CATEGORY:') ) {
 				$category = trim( substr($line, strlen('CATEGORY:')) );
+
 				if ( '' != $category )
-					$post->categories[] = $category;
+					$post->categories[] = explode( ',', $category );
+
 			} else if ( 0 === strpos($line, 'PRIMARY CATEGORY:') ) {
 				$category = trim( substr($line, strlen('PRIMARY CATEGORY:')) );
 				if ( '' != $category )
-					$post->categories[] = $category;
+					$post->categories[] = explode( ',', $category );;
 			} else if ( 0 === strpos($line, 'DATE:') ) {
 				$date = trim( substr($line, strlen('DATE:')) );
 				$date = strtotime($date);
@@ -487,8 +636,10 @@ class MT_Import extends WP_Importer {
 			$this->file = WP_CONTENT_DIR . '/mt-export.txt';
 		else
 			$this->file = get_attached_file($this->id);
+
 		$this->get_authors_from_post();
 		$result = $this->process_posts();
+
 		if ( is_wp_error( $result ) )
 			return $result;
 	}
