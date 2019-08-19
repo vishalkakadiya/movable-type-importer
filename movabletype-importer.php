@@ -270,6 +270,37 @@ class MT_Import extends WP_Importer {
 			if ( is_wp_error( $post_id ) )
 				return $post_id;
 
+
+			if ( isset( $post->image ) && ! empty( $post->image ) ) {
+
+				$image_src = $post->image;
+
+				$file_array['tmp_name'] = download_url( $image_src );
+
+				$file_array['name'] = basename( $image_src );
+				$attachment_id      = media_handle_sideload( $file_array, $post_id );
+
+				if ( is_wp_error( $attachment_id ) ) {
+
+					printf( '<br />' . __( 'Image import failed for source: <em>%s</em>', 'movabletype-importer' ), esc_html( $post->image ) );
+
+				} else {
+
+					$success = set_post_thumbnail( $post_id, $attachment_id );
+
+					if ( ! $success ) {
+
+						printf( '<br />' . __( 'Post thumbnail(attachment id: <em>%d</em>) not set for post : <em>%d</em>', 'movabletype-importer' ), esc_html( $attachment_id ), esc_html( $post_id ) );
+
+					} else {
+
+						printf( '<br />' . __( 'Image uploaded for post: <em>%d</em>', 'movabletype-importer' ), esc_html( $post_id ) );
+					}
+				}
+
+
+			}
+
 			// Add categories.
 			if ( 0 != count( $post->categories ) ) {
 				wp_create_categories( $post->categories, $post_id );
@@ -280,18 +311,31 @@ class MT_Import extends WP_Importer {
 
 				$category_ids = [];
 
-				foreach ( $post->specific_categories as $category_slug => $category_name ) {
+				$taxonomy = 'category';
+				if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type ) ) {
+					$taxonomy = $post->post_type;
+				}
 
-					$category_id = category_exists( $category_slug );
+				foreach ( $post->specific_categories as $category_slug => $category ) {
+
+					$category_id = term_exists( $category_slug, $taxonomy );
 
 					if ( ! $category_id ) {
 
-						$category_id = wp_insert_category(
-							[
-								'category_nicename' => $category_slug,
-								'cat_name'          => $category_name,
-							]
-						);
+						if ( ! empty( $category['category_parent'] ) ) {
+
+							$parent_category = get_term_by( 'slug', $category['category_parent'], $taxonomy );
+
+							if ( $parent_category ) {
+								$category['category_parent'] = $parent_category->term_id;
+							} else {
+								unset( $category['category_parent'] );
+							}
+						}
+
+						$category['taxonomy'] = $taxonomy;
+
+						$category_id = wp_insert_category( $category );
 					}
 
 					if ( $category_id ) {
@@ -301,7 +345,7 @@ class MT_Import extends WP_Importer {
 
 				// Attach categories to post.
 				if ( ! empty( $category_ids ) ) {
-					wp_set_post_categories( $post_id, $category_ids, true );
+					wp_set_post_terms( $post_id, $category_ids, $taxonomy, true );
 				}
 			}
 
@@ -453,6 +497,11 @@ class MT_Import extends WP_Importer {
 					}
 				}
 
+			} else if ( 0 === strpos($line, 'IMAGE:') ) {
+				$image = trim( substr($line, strlen('IMAGE:')) );
+				if ( ! empty( $image ) ) {
+					$post->image = $image;
+				}
 			} else if ( 0 === strpos($line, 'BASENAME:') ) {
 				$slug = trim( substr($line, strlen('BASENAME:')) );
 				if ( !empty( $slug ) )
@@ -480,6 +529,7 @@ class MT_Import extends WP_Importer {
 				$categories = trim( substr( $line, strlen( 'CATEGORIES:' ) ) );
 
 				if ( '' !== $categories ) {
+
 					$list_categories = explode( ',', $categories );
 
 					foreach ( $list_categories as $list_category ) {
@@ -487,7 +537,17 @@ class MT_Import extends WP_Importer {
 						$category_detail = explode( ':::', $list_category );
 
 						if ( ! empty( $category_detail[0] ) && ! empty( $category_detail[1] ) ) {
-							$post->specific_categories[ $category_detail[0] ] = $category_detail[1];
+
+							$category = [
+								'category_nicename' => $category_detail[0],
+								'cat_name'          => $category_detail[1],
+							];
+
+							if ( ! empty( $category_detail[2] ) ) {
+								$category['category_parent'] = $category_detail[2];
+							}
+
+							$post->specific_categories[ $category_detail[0] ] = $category;
 						}
 					}
 				}
