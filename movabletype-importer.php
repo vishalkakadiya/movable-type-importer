@@ -312,7 +312,7 @@ if ( class_exists( 'WP_Importer' ) ) {
 					$category_ids = [];
 
 					$taxonomy = 'category';
-					if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type ) ) {
+					if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type . '_tax' ) ) {
 						$taxonomy = $post->post_type;
 					}
 
