@@ -326,10 +326,10 @@ class MT_Import extends WP_Importer {
 
 				$category_ids = [];
 
-				$taxonomy = 'category';
-				if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type ) ) {
-					$taxonomy = $post->post_type;
-				}
+					$taxonomy = 'category';
+					if ( ! empty( $post->post_type ) && taxonomy_exists( $post->post_type . '_tax' ) ) {
+						$taxonomy = $post->post_type;
+					}
 
 				foreach ( $post->specific_categories as $category_slug => $category ) {
 
