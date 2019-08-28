@@ -300,10 +300,6 @@ if ( class_exists( 'WP_Importer' ) ) {
 
 				$prepare_post = (array) $post;
 
-				echo '$prepare_post: <pre>';
-				print_r( $prepare_post );
-				echo '</pre>';
-
 				$post_id = wp_insert_post( $prepare_post );
 
 				if ( is_wp_error( $post_id ) ) {
